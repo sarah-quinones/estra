@@ -237,7 +237,7 @@ impl App {
                                     xmin = xmin.min(x);
                                     xmax = xmin.max(x);
                                     ymin = ymin.min(y);
-                                    ymax = ymin.max(y);
+                                    ymax = ymax.max(y);
                                     (x, y)
                                 })
                                 .collect::<Vec<_>>(),
