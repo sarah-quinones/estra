@@ -2,6 +2,13 @@
 name = "estra"
 version = "0.1.0"
 edition = "2021"
+authors = ["sarah <>"]
+description = "tui for diol"
+readme = "README.md"
+repository = "https://github.com/sarah-ek/estra/"
+license = "MIT"
+keywords = ["benchmark"]
+
 
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
