@@ -350,11 +350,7 @@ impl App {
                     self.group_idx = Ord::min(self.result.groups.len() - 1, self.group_idx + 1)
                 }
             }
-            KeyCode::Char('r') => {
-                if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                    *self = Self::new(std::mem::take(&mut self.path)).unwrap()
-                }
-            }
+            KeyCode::Char('R') => *self = Self::new(std::mem::take(&mut self.path)).unwrap(),
             _ => {}
         }
     }
