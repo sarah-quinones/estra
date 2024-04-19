@@ -298,7 +298,7 @@ impl App {
                         .block(block.clone())
                         .x_axis(x_axis)
                         .y_axis(y_axis)
-                        .hidden_legend_constraints((Constraint::Min(0), Constraint::Ratio(1, 4)))
+                        .hidden_legend_constraints((Constraint::Min(0), Constraint::Min(0)))
                         .legend_position(Some(widgets::LegendPosition::TopLeft));
 
                     frame.render_stateful_widget(list, split_layout[0], &mut list_state);
@@ -375,6 +375,8 @@ fn main() -> eyre::Result<()> {
 
     let mut app = App::new(clap.path)?;
     app.run(&mut tui)?;
+
+    restore_tui()?;
 
     Ok(())
 }
