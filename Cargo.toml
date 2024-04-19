@@ -15,7 +15,7 @@ clap = { version = "4.5.4", features = ["derive"] }
 color-eyre = "0.6.3"
 colorgrad = "0.6.2"
 crossterm = "0.27.0"
-diol = { version = "0.4.0" }
+diol = { version = "0.4.1" }
 ratatui = "0.26.2"
 serde_json = "1.0.116"
 tui-scrollview = "0.3.4"
