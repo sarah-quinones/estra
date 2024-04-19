@@ -404,16 +404,17 @@ dependencies = [
 [[package]]
 name = "diol"
 version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed213bd601331f48609d2f766589306a7985c84735c89f2f7348aa996e9a8544"
 dependencies = [
  "clap",
  "dyn-clone",
  "equator",
  "plotters",
+ "prettyplease",
+ "quote",
  "regex",
  "serde",
  "serde_json",
+ "syn",
 ]
 
 [[package]]
@@ -492,7 +493,7 @@ dependencies = [
 
 [[package]]
 name = "estra"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "color-eyre",
@@ -1029,6 +1030,16 @@ checksum = "41f4728c0f3db6c72dafb98bab489ac7797f6207bdd8e56871097af6a17915d7"
 dependencies = [
  "bytemuck",
  "pulp",
+]
+
+[[package]]
+name = "prettyplease"
+version = "0.2.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ac2cf0f2e4f42b49f5ffd07dae8d746508ef7526c13940e5f524012ae6c6550"
+dependencies = [
+ "proc-macro2",
+ "syn",
 ]
 
 [[package]]

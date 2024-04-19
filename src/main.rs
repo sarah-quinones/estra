@@ -1,6 +1,6 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use color_eyre::{config::HookBuilder, eyre};
-use colorgrad::viridis;
+use colorgrad::{viridis, Gradient};
 use crossterm::{
     event::{self, KeyCode, KeyModifiers},
     execute,
@@ -9,8 +9,7 @@ use crossterm::{
 use diol::Picoseconds;
 use ratatui::{
     prelude::*,
-    symbols::border,
-    widgets::{self, Axis, Block, Borders, Dataset, Paragraph},
+    widgets::{self, Axis, Block, Borders, Dataset},
 };
 use std::{
     io::{self, stdout, Stdout},
@@ -21,6 +20,7 @@ use std::{
 #[derive(Debug)]
 struct App {
     path: PathBuf,
+    colors: Gradient,
     result: diol::BenchResult,
     group_idx: usize,
     arg_idx_per_group: Vec<usize>,
@@ -80,27 +80,14 @@ fn stddev(timings: &[Picoseconds], mean: Picoseconds) -> Picoseconds {
     Picoseconds(isqrt(variance as u128) as i128)
 }
 
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_set(border::PLAIN);
-        let counter_text = Text::from(vec![Line::from(vec!["Value: ".into(), "yahoo!".yellow()])]);
-
-        Paragraph::new(counter_text)
-            .centered()
-            .block(block)
-            .render(area, buf);
-    }
-}
-
 impl App {
-    pub fn new(path: PathBuf) -> io::Result<Self> {
+    pub fn new(path: PathBuf, colors: Gradient) -> io::Result<Self> {
         let file = std::fs::File::open(&path)?;
-        let result: diol::BenchResult = serde_json::from_reader(file)?;
+        let result: diol::BenchResult = serde_json::from_reader(io::BufReader::new(file))?;
         let group_count = result.groups.len();
         let app = App {
             path,
+            colors,
             result,
             group_idx: 0,
             arg_idx_per_group: vec![0; group_count],
@@ -124,15 +111,16 @@ impl App {
             .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(frame.size());
 
-        let block = Block::new().borders(Borders::all());
+        let block = Block::new().borders(Borders::all()).white().on_black();
 
         let list = widgets::List::new(self.result.groups.iter().map(|group| {
+            let suffix = if group.function.len() <= 1 { "" } else { "..." };
             group
                 .function
                 .iter()
-                .map(|f| &*f.name)
-                .collect::<Vec<_>>()
-                .join(" | ")
+                .next()
+                .map(|f| format!("{}{suffix}", &*f.name))
+                .unwrap_or(String::new())
         }))
         .highlight_style(Style::default().black().on_white())
         .block(block.clone());
@@ -167,17 +155,20 @@ impl App {
 
             match &group.args {
                 diol::BenchArgs::Named(args) => {
-                    let data = widgets::Table::default().block(block.clone()).rows(
-                        args.iter()
-                            .map(|f| f.clone())
-                            .zip(timings.iter().map(|timings| {
-                                timings
-                                    .iter()
-                                    .map(|(mean, stddev)| format!("{mean:?} ± {stddev:?}"))
-                            }))
-                            .map(|(name, data)| std::iter::once(name).chain(data))
-                            .map(widgets::Row::new),
-                    );
+                    let data = widgets::Table::default()
+                        .block(block.clone())
+                        .rows(
+                            args.iter()
+                                .map(|f| f.clone())
+                                .zip(timings.iter().map(|timings| {
+                                    timings
+                                        .iter()
+                                        .map(|(mean, stddev)| format!("{mean:?} ± {stddev:?}"))
+                                }))
+                                .map(|(name, data)| std::iter::once(name).chain(data))
+                                .map(widgets::Row::new),
+                        )
+                        .column_spacing(3);
                     let mut data_state = widgets::TableState::new();
 
                     let data = data
@@ -251,11 +242,11 @@ impl App {
                     for (idx, (func, chart_data)) in
                         std::iter::zip(&group.function, &chart_data).enumerate()
                     {
-                        let color = viridis();
                         let color = if group.function.len() <= 1 {
-                            color.at(0.5)
+                            self.colors.at(0.5)
                         } else {
-                            color.at(idx as f64 / (group.function.len() - 1) as f64)
+                            self.colors
+                                .at(idx as f64 / (group.function.len() - 1) as f64)
                         };
                         datasets.push(
                             Dataset::default()
@@ -294,7 +285,6 @@ impl App {
                         ]);
 
                     let chart = widgets::Chart::new(datasets)
-                        .on_dark_gray()
                         .block(block.clone())
                         .x_axis(x_axis)
                         .y_axis(y_axis)
@@ -353,7 +343,13 @@ impl App {
                     self.group_idx = Ord::min(self.result.groups.len() - 1, self.group_idx + 1)
                 }
             }
-            KeyCode::Char('R') => *self = Self::new(std::mem::take(&mut self.path)).unwrap(),
+            KeyCode::Char('R') => {
+                *self = Self::new(
+                    std::mem::take(&mut self.path),
+                    std::mem::replace(&mut self.colors, viridis()),
+                )
+                .unwrap();
+            }
             _ => {}
         }
     }
@@ -364,16 +360,47 @@ impl App {
 }
 
 fn main() -> eyre::Result<()> {
+    #[derive(ValueEnum, Debug, Clone)]
+    #[clap(rename_all = "kebab_case")]
+    enum Colors {
+        CubehelixDefault,
+        Turbo,
+        Spectral,
+        Viridis,
+        Magma,
+        Inferno,
+        Plasma,
+        Cividis,
+        Warm,
+        Cool,
+    }
+
     #[derive(Parser)]
     struct Clap {
         path: PathBuf,
+        #[arg(long)]
+        colors: Option<Colors>,
     }
     let clap = Clap::parse();
 
     install_hooks()?;
     let mut tui = init_tui()?;
 
-    let mut app = App::new(clap.path)?;
+    let mut app = App::new(
+        clap.path,
+        match clap.colors.unwrap_or(Colors::Spectral) {
+            Colors::CubehelixDefault => colorgrad::cubehelix_default(),
+            Colors::Turbo => colorgrad::turbo(),
+            Colors::Spectral => colorgrad::spectral(),
+            Colors::Viridis => colorgrad::viridis(),
+            Colors::Magma => colorgrad::magma(),
+            Colors::Inferno => colorgrad::inferno(),
+            Colors::Plasma => colorgrad::plasma(),
+            Colors::Cividis => colorgrad::cividis(),
+            Colors::Warm => colorgrad::warm(),
+            Colors::Cool => colorgrad::cool(),
+        },
+    )?;
     app.run(&mut tui)?;
 
     restore_tui()?;
