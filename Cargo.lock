@@ -403,9 +403,9 @@ dependencies = [
 
 [[package]]
 name = "diol"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f0217a825097a58f9726ceced3073c722b5aff4208dc24f7c844759eea1725a"
+checksum = "4b928e801994fb1d4192ce261d59a1d0702c0e06d81c745b8d8a9ccc37933d91"
 dependencies = [
  "clap",
  "dyn-clone",
@@ -492,7 +492,7 @@ dependencies = [
 
 [[package]]
 name = "estra"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "clap",
  "color-eyre",

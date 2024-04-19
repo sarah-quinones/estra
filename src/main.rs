@@ -228,12 +228,15 @@ impl App {
                     let mut ymin = 0.0f64;
                     let mut ymax = 0.0f64;
 
+                    let mut metric_name = None;
+
                     for func in &group.function {
+                        metric_name = Some(&*func.metric.as_ref().unwrap().0);
                         chart_data.push(
                             args.iter()
-                                .zip(func.timings.iter().map(|timings| mean(timings)))
+                                .zip(func.metric.as_ref().unwrap().1.iter())
                                 .map(|(x, y)| {
-                                    let (x, y) = (x.0 as f64, (y.0 as f64) * 1e-12);
+                                    let (x, y) = (x.0 as f64, *y);
                                     xmin = xmin.min(x);
                                     xmax = xmin.max(x);
                                     ymin = ymin.min(y);
@@ -270,7 +273,7 @@ impl App {
 
                     // Create the X axis and define its properties
                     let x_axis = Axis::default()
-                        .title("X Axis".red())
+                        .title("n".red())
                         .style(Style::default().white())
                         .bounds([xmin, xmax])
                         .labels(vec![
@@ -281,7 +284,7 @@ impl App {
 
                     // Create the Y axis and define its properties
                     let y_axis = Axis::default()
-                        .title("Y Axis".red())
+                        .title(metric_name.unwrap_or("time").red())
                         .style(Style::default().white())
                         .bounds([ymin, ymax])
                         .labels(vec![
