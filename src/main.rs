@@ -1,6 +1,5 @@
 use clap::{Parser, ValueEnum};
 use color_eyre::{config::HookBuilder, eyre};
-use colorgrad::{viridis, Gradient};
 use crossterm::{
     event::{self, KeyCode, KeyModifiers},
     execute,
@@ -17,11 +16,26 @@ use std::{
     path::PathBuf,
 };
 
+#[derive(ValueEnum, Debug, Clone, Copy)]
+#[clap(rename_all = "kebab_case")]
+enum Colors {
+    CubehelixDefault,
+    Turbo,
+    Spectral,
+    Viridis,
+    Magma,
+    Inferno,
+    Plasma,
+    Cividis,
+    Warm,
+    Cool,
+}
+
 #[derive(Debug)]
 struct App {
     path: PathBuf,
-    colors: Gradient,
-    result: diol::BenchResult,
+    colors: Colors,
+    result: diol::result::BenchResult,
     group_idx: usize,
     arg_idx_per_group: Vec<usize>,
     exit: bool,
@@ -36,7 +50,7 @@ fn mean(timings: &[Picoseconds]) -> Picoseconds {
 }
 
 // taken from the stdlib
-pub const fn isqrt(this: u128) -> u128 {
+const fn isqrt(this: u128) -> u128 {
     if this < 2 {
         return this;
     }
@@ -81,9 +95,9 @@ fn stddev(timings: &[Picoseconds], mean: Picoseconds) -> Picoseconds {
 }
 
 impl App {
-    pub fn new(path: PathBuf, colors: Gradient) -> io::Result<Self> {
+    fn new(path: PathBuf, colors: Colors) -> io::Result<Self> {
         let file = std::fs::File::open(&path)?;
-        let result: diol::BenchResult = serde_json::from_reader(io::BufReader::new(file))?;
+        let result: diol::result::BenchResult = serde_json::from_reader(io::BufReader::new(file))?;
         let group_count = result.groups.len();
         let app = App {
             path,
@@ -97,7 +111,7 @@ impl App {
     }
 
     /// runs the application's main loop until the user quits
-    pub fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
+    fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events()?;
@@ -112,6 +126,21 @@ impl App {
             .split(frame.size());
 
         let block = Block::new().borders(Borders::all()).white().on_black();
+        let bottom_block = block
+            .clone()
+            .title_bottom(Line::from(vec![
+                " next group ".into(),
+                "<j>".blue().bold(),
+                " prev group ".into(),
+                "<k>".blue().bold(),
+                " next arg ".into(),
+                "<ctrl-j>".blue().bold(),
+                " prev arg ".into(),
+                "<ctrl-k>".blue().bold(),
+                " reload file ".into(),
+                "<ctrl-r>".blue().bold(),
+            ]))
+            .title_alignment(Alignment::Center);
 
         let list = widgets::List::new(self.result.groups.iter().map(|group| {
             let suffix = if group.function.len() <= 1 { "" } else { "..." };
@@ -132,12 +161,12 @@ impl App {
         if let Some(group) = self.result.groups.get(self.group_idx) {
             let split_layout = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
+                .constraints(vec![Constraint::Percentage(25), Constraint::Percentage(75)])
                 .split(layout[0]);
 
             let args_len = match &group.args {
-                diol::BenchArgs::Named(args) => args.len(),
-                diol::BenchArgs::Plot(args) => args.len(),
+                diol::result::BenchArgs::Named(args) => args.len(),
+                diol::result::BenchArgs::Plot(args) => args.len(),
             };
 
             let mut header = vec!["args"];
@@ -154,7 +183,7 @@ impl App {
             }
 
             match &group.args {
-                diol::BenchArgs::Named(args) => {
+                diol::result::BenchArgs::Named(args) => {
                     let data = widgets::Table::default()
                         .block(block.clone())
                         .rows(
@@ -186,7 +215,7 @@ impl App {
                     frame.render_stateful_widget(list, layout[0], &mut list_state);
                     frame.render_stateful_widget(data, layout[1], &mut data_state);
                 }
-                diol::BenchArgs::Plot(args) => {
+                diol::result::BenchArgs::Plot(args) => {
                     let data = widgets::Table::default().block(block.clone()).rows(
                         args.iter()
                             .map(|f| format!("{f:?}"))
@@ -219,13 +248,12 @@ impl App {
                     let mut ymin = 0.0f64;
                     let mut ymax = 0.0f64;
 
-                    let mut metric_name = None;
+                    let metric_name = &*group.metric_name;
 
                     for func in &group.function {
-                        metric_name = Some(&*func.metric.as_ref().unwrap().0);
                         chart_data.push(
                             args.iter()
-                                .zip(func.metric.as_ref().unwrap().1.iter())
+                                .zip(func.metric.as_ref().unwrap().iter())
                                 .map(|(x, y)| {
                                     let (x, y) = (x.0 as f64, *y);
                                     xmin = xmin.min(x);
@@ -242,11 +270,23 @@ impl App {
                     for (idx, (func, chart_data)) in
                         std::iter::zip(&group.function, &chart_data).enumerate()
                     {
+                        let colors = match self.colors {
+                            Colors::CubehelixDefault => colorgrad::cubehelix_default(),
+                            Colors::Turbo => colorgrad::turbo(),
+                            Colors::Spectral => colorgrad::spectral(),
+                            Colors::Viridis => colorgrad::viridis(),
+                            Colors::Magma => colorgrad::magma(),
+                            Colors::Inferno => colorgrad::inferno(),
+                            Colors::Plasma => colorgrad::plasma(),
+                            Colors::Cividis => colorgrad::cividis(),
+                            Colors::Warm => colorgrad::warm(),
+                            Colors::Cool => colorgrad::cool(),
+                        };
+
                         let color = if group.function.len() <= 1 {
-                            self.colors.at(0.5)
+                            colors.at(0.5)
                         } else {
-                            self.colors
-                                .at(idx as f64 / (group.function.len() - 1) as f64)
+                            colors.at(idx as f64 / (group.function.len() - 1) as f64)
                         };
                         datasets.push(
                             Dataset::default()
@@ -275,7 +315,7 @@ impl App {
 
                     // Create the Y axis and define its properties
                     let y_axis = Axis::default()
-                        .title(metric_name.unwrap_or("time").red())
+                        .title(metric_name.red())
                         .style(Style::default().white())
                         .bounds([ymin, ymax])
                         .labels(vec![
@@ -293,12 +333,16 @@ impl App {
 
                     frame.render_stateful_widget(list, split_layout[0], &mut list_state);
                     frame.render_widget(chart, split_layout[1]);
-                    frame.render_stateful_widget(data, layout[1], &mut data_state);
+                    frame.render_stateful_widget(
+                        data.block(bottom_block),
+                        layout[1],
+                        &mut data_state,
+                    );
                 }
             }
         } else {
             frame.render_stateful_widget(list, layout[0], &mut list_state);
-            frame.render_widget(widgets::Block::new().borders(Borders::all()), layout[1]);
+            frame.render_widget(bottom_block, layout[1]);
         }
     }
 
@@ -333,8 +377,8 @@ impl App {
                 if key_event.modifiers.contains(KeyModifiers::CONTROL) {
                     self.arg_idx_per_group[self.group_idx] = Ord::min(
                         match &self.result.groups[self.group_idx].args {
-                            diol::BenchArgs::Named(args) => args.len(),
-                            diol::BenchArgs::Plot(args) => args.len(),
+                            diol::result::BenchArgs::Named(args) => args.len(),
+                            diol::result::BenchArgs::Plot(args) => args.len(),
                         }
                         .saturating_sub(1),
                         self.arg_idx_per_group[self.group_idx] + 1,
@@ -343,12 +387,10 @@ impl App {
                     self.group_idx = Ord::min(self.result.groups.len() - 1, self.group_idx + 1)
                 }
             }
-            KeyCode::Char('R') => {
-                *self = Self::new(
-                    std::mem::take(&mut self.path),
-                    std::mem::replace(&mut self.colors, viridis()),
-                )
-                .unwrap();
+            KeyCode::Char('r') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Ok(new) = Self::new(self.path.clone(), self.colors) {
+                    *self = new;
+                }
             }
             _ => {}
         }
@@ -360,23 +402,9 @@ impl App {
 }
 
 fn main() -> eyre::Result<()> {
-    #[derive(ValueEnum, Debug, Clone)]
-    #[clap(rename_all = "kebab_case")]
-    enum Colors {
-        CubehelixDefault,
-        Turbo,
-        Spectral,
-        Viridis,
-        Magma,
-        Inferno,
-        Plasma,
-        Cividis,
-        Warm,
-        Cool,
-    }
-
     #[derive(Parser)]
     struct Clap {
+        /// `diol` json output file path.
         path: PathBuf,
         #[arg(long)]
         colors: Option<Colors>,
@@ -386,21 +414,7 @@ fn main() -> eyre::Result<()> {
     install_hooks()?;
     let mut tui = init_tui()?;
 
-    let mut app = App::new(
-        clap.path,
-        match clap.colors.unwrap_or(Colors::Spectral) {
-            Colors::CubehelixDefault => colorgrad::cubehelix_default(),
-            Colors::Turbo => colorgrad::turbo(),
-            Colors::Spectral => colorgrad::spectral(),
-            Colors::Viridis => colorgrad::viridis(),
-            Colors::Magma => colorgrad::magma(),
-            Colors::Inferno => colorgrad::inferno(),
-            Colors::Plasma => colorgrad::plasma(),
-            Colors::Cividis => colorgrad::cividis(),
-            Colors::Warm => colorgrad::warm(),
-            Colors::Cool => colorgrad::cool(),
-        },
-    )?;
+    let mut app = App::new(clap.path, clap.colors.unwrap_or(Colors::Spectral))?;
     app.run(&mut tui)?;
 
     restore_tui()?;
@@ -408,13 +422,13 @@ fn main() -> eyre::Result<()> {
     Ok(())
 }
 
-pub fn init_tui() -> io::Result<Tui> {
+fn init_tui() -> io::Result<Tui> {
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen)?;
     Terminal::new(CrosstermBackend::new(stdout()))
 }
 
-pub fn restore_tui() -> io::Result<()> {
+fn restore_tui() -> io::Result<()> {
     disable_raw_mode()?;
     execute!(stdout(), LeaveAlternateScreen)?;
     Ok(())
@@ -422,7 +436,7 @@ pub fn restore_tui() -> io::Result<()> {
 
 /// This replaces the standard color_eyre panic and error hooks with hooks that
 /// restore the terminal before printing the panic or error.
-pub fn install_hooks() -> color_eyre::Result<()> {
+fn install_hooks() -> color_eyre::Result<()> {
     let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 
     // convert from a color_eyre PanicHook to a standard panic hook
