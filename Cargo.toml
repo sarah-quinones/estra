@@ -1,6 +1,6 @@
 [package]
 name = "estra"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 authors = ["sarah <>"]
 description = "tui for diol"
@@ -15,7 +15,7 @@ clap = { version = "4.5.4", features = ["derive"] }
 color-eyre = "0.6.3"
 colorgrad = "0.6.2"
 crossterm = "0.27.0"
-diol = { version = "0.8.0" }
+diol = { version = "0.8.0", default-features = false }
 ratatui = "0.26.2"
 serde_json = "1.0.116"
 tui-scrollview = "0.3.4"
