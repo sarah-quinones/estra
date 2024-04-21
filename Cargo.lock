@@ -403,9 +403,9 @@ dependencies = [
 
 [[package]]
 name = "diol"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6606fcd74fd07728c1d731236fb1e35eb61633c67a32c87645631db02f5a4cba"
+checksum = "41a33483d4458581d8967133a120041beed5d32480a6035d3774eb0fb6961dab"
 dependencies = [
  "clap",
  "colorgrad",
