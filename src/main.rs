@@ -5,7 +5,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use diol::Picoseconds;
+use diol::{result::*, Picoseconds};
 use ratatui::{
     prelude::*,
     widgets::{self, Axis, Block, Borders, Dataset},
@@ -35,7 +35,7 @@ enum Colors {
 struct App {
     path: PathBuf,
     colors: Colors,
-    result: diol::result::BenchResult,
+    result: BenchResult,
     group_idx: usize,
     arg_idx_per_group: Vec<usize>,
     exit: bool,
@@ -43,61 +43,10 @@ struct App {
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-fn mean(timings: &[Picoseconds]) -> Picoseconds {
-    let sum = timings.iter().map(|x| x.0).sum::<i128>();
-    let mean = Picoseconds(sum.checked_div(timings.len() as i128).unwrap_or(0));
-    mean
-}
-
-// taken from the stdlib
-const fn isqrt(this: u128) -> u128 {
-    if this < 2 {
-        return this;
-    }
-
-    // The algorithm is based on the one presented in
-    // <https://en.wikipedia.org/wiki/Methods_of_computing_square_roots#Binary_numeral_system_(base_2)>
-    // which cites as source the following C code:
-    // <https://web.archive.org/web/20120306040058/http://medialab.freaknet.org/martin/src/sqrt/sqrt.c>.
-
-    let mut op = this;
-    let mut res = 0;
-    let mut one = 1 << (this.ilog2() & !1);
-
-    while one != 0 {
-        if op >= res + one {
-            op -= res + one;
-            res = (res >> 1) + one;
-        } else {
-            res >>= 1;
-        }
-        one >>= 2;
-    }
-
-    res
-}
-
-fn stddev(timings: &[Picoseconds], mean: Picoseconds) -> Picoseconds {
-    let count = timings.len();
-    let variance = if count <= 1 {
-        0
-    } else {
-        timings
-            .iter()
-            .map(|x| {
-                let diff = x.0 - mean.0;
-                diff * diff
-            })
-            .sum::<i128>()
-            / (count as i128 - 1)
-    };
-    Picoseconds(isqrt(variance as u128) as i128)
-}
-
 impl App {
     fn new(path: PathBuf, colors: Colors) -> io::Result<Self> {
         let file = std::fs::File::open(&path)?;
-        let result: diol::result::BenchResult = serde_json::from_reader(io::BufReader::new(file))?;
+        let result: BenchResult = serde_json::from_reader(io::BufReader::new(file))?;
         let group_count = result.groups.len();
         let app = App {
             path,
@@ -165,25 +114,30 @@ impl App {
                 .split(layout[0]);
 
             let args_len = match &group.args {
-                diol::result::BenchArgs::Named(args) => args.len(),
-                diol::result::BenchArgs::Plot(args) => args.len(),
+                BenchArgs::Named(args) => args.len(),
+                BenchArgs::Plot(args) => args.len(),
             };
 
             let mut header = vec!["args"];
 
             let mut timings =
                 vec![vec![(Picoseconds(0), Picoseconds(0)); group.function.len()]; args_len];
+            let mut metrics = vec![vec![(0.0, 0.0); group.function.len()]; args_len];
+
             for (func_idx, func) in group.function.iter().enumerate() {
                 header.push(&func.name);
-                for (arg_idx, arg) in func.timings.iter().enumerate() {
-                    let mean = mean(arg);
-                    let stddev = stddev(arg, mean);
-                    timings[arg_idx][func_idx] = (mean, stddev);
+
+                for arg_idx in 0..func.timings.len() {
+                    let (time, metric) = func.at(Arg(arg_idx));
+                    timings[arg_idx][func_idx] = time.mean_stddev();
+                    if let Some(metric) = metric {
+                        metrics[arg_idx][func_idx] = metric.mean_stddev();
+                    }
                 }
             }
 
             match &group.args {
-                diol::result::BenchArgs::Named(args) => {
+                BenchArgs::Named(args) => {
                     let data = widgets::Table::default()
                         .block(block.clone())
                         .rows(
@@ -215,7 +169,7 @@ impl App {
                     frame.render_stateful_widget(list, layout[0], &mut list_state);
                     frame.render_stateful_widget(data, layout[1], &mut data_state);
                 }
-                diol::result::BenchArgs::Plot(args) => {
+                BenchArgs::Plot(args) => {
                     let data = widgets::Table::default().block(block.clone()).rows(
                         args.iter()
                             .map(|f| format!("{f:?}"))
@@ -245,17 +199,17 @@ impl App {
 
                     let mut xmin = 0.0f64;
                     let mut xmax = 0.0f64;
-                    let mut ymin = 0.0f64;
-                    let mut ymax = 0.0f64;
+                    let mut ymin = f64::INFINITY;
+                    let mut ymax = f64::NEG_INFINITY;
 
                     let metric_name = &*group.metric_name;
 
-                    for func in &group.function {
+                    for func_idx in 0..group.function.len() {
                         chart_data.push(
                             args.iter()
-                                .zip(func.metric.as_ref().unwrap().iter())
-                                .map(|(x, y)| {
-                                    let (x, y) = (x.0 as f64, *y);
+                                .enumerate()
+                                .map(|(arg_idx, &arg)| {
+                                    let (x, y) = (arg.0 as f64, metrics[arg_idx][func_idx].1);
                                     xmin = xmin.min(x);
                                     xmax = xmin.max(x);
                                     ymin = ymin.min(y);
@@ -265,6 +219,8 @@ impl App {
                                 .collect::<Vec<_>>(),
                         )
                     }
+
+                    ymin = ymin.min(0.0);
 
                     let mut datasets = vec![];
                     for (idx, (func, chart_data)) in
@@ -376,11 +332,10 @@ impl App {
             KeyCode::Char('j') => {
                 if key_event.modifiers.contains(KeyModifiers::CONTROL) {
                     self.arg_idx_per_group[self.group_idx] = Ord::min(
-                        match &self.result.groups[self.group_idx].args {
-                            diol::result::BenchArgs::Named(args) => args.len(),
-                            diol::result::BenchArgs::Plot(args) => args.len(),
-                        }
-                        .saturating_sub(1),
+                        self.result.groups[self.group_idx]
+                            .args
+                            .len()
+                            .saturating_sub(1),
                         self.arg_idx_per_group[self.group_idx] + 1,
                     );
                 } else {
