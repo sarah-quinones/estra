@@ -83,15 +83,17 @@ impl App {
                 " prev group ".into(),
                 "<k>".blue().bold(),
                 " next arg ".into(),
-                "<ctrl-j>".blue().bold(),
+                "<ctrl-j>".green().bold(),
                 " prev arg ".into(),
-                "<ctrl-k>".blue().bold(),
+                "<ctrl-k>".green().bold(),
                 " next function ".into(),
-                "<ctrl-l>".blue().bold(),
+                "<ctrl-l>".magenta().bold(),
                 " prev function ".into(),
-                "<ctrl-h>".blue().bold(),
+                "<ctrl-h>".magenta().bold(),
                 " reload file ".into(),
-                "<ctrl-r>".blue().bold(),
+                "<ctrl-r>".red().bold(),
+                " quit ".into(),
+                "<q>".red().bold(),
             ]))
             .title_alignment(Alignment::Center);
 
