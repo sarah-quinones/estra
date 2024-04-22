@@ -219,6 +219,7 @@ impl App {
                                         ymax = ymax.max(y);
                                         (x, y)
                                     })
+                                    .filter(|(_, y)| !y.is_nan())
                                     .collect::<Vec<_>>(),
                             )
                         }
@@ -345,6 +346,7 @@ impl App {
                 let hist_height = split_layout[1].height.saturating_sub(8) as usize;
                 let f_idx = self.position_per_group[self.group_idx].0 - 1;
                 let arg_idx = self.position_per_group[self.group_idx].1;
+                let mut drew_block = false;
                 'stop: {
                     if hist_width > 2 && hist_height > 4 {
                         let histbars = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
@@ -355,7 +357,9 @@ impl App {
 
                         // remove outliers, taken from julia benchmarktools
                         let mut sum = timings.iter().copied().sum::<Picoseconds>();
-                        while sum / timings.len() as i128 > timings[timings.len() / 2] {
+                        while timings.len() > 0
+                            && sum / timings.len() as i128 > timings[timings.len() / 2]
+                        {
                             let removed = timings.pop().unwrap();
                             sum -= removed;
                         }
@@ -428,11 +432,15 @@ impl App {
                         }
                         text.lines.push(Line::from(line.join("")));
                         text.lines.push(Line::from(labels));
+                        drew_block = true;
                         frame.render_widget(
                             Paragraph::new(text).block(block.clone()),
                             split_layout[1],
                         );
                     }
+                }
+                if !drew_block {
+                    frame.render_widget(block.clone(), split_layout[1]);
                 }
                 frame.render_stateful_widget(list, split_layout[0], &mut list_state);
                 frame.render_widget(data.block(bottom_block), layout[1]);
