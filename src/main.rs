@@ -214,9 +214,9 @@ impl App {
                                 args.iter()
                                     .enumerate()
                                     .map(|(arg_idx, &arg)| {
-                                        let (x, y) = (arg.0 as f64, metrics[arg_idx][func_idx].1);
+                                        let (x, y) = (arg.0 as f64, metrics[arg_idx][func_idx].0);
                                         xmin = xmin.min(x);
-                                        xmax = xmin.max(x);
+                                        xmax = xmax.max(x);
                                         ymin = ymin.min(y);
                                         ymax = ymax.max(y);
                                         (x, y)
